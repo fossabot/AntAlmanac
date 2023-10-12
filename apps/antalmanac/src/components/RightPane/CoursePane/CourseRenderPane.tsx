@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import LazyLoad from 'react-lazyload';
 
 import { Alert, Box, IconButton } from '@mui/material';
@@ -18,11 +18,18 @@ import { isDarkMode, queryWebsocMultiple } from '$lib/helpers';
 import analyticsEnum from '$lib/analytics';
 import { queryWebsoc } from '$lib/course-helpers';
 
-const flattenSOCObject = (SOCObject: WebsocAPIResponse): (WebsocSchool | WebsocDepartment | AACourse)[] => {
+function yeet() {
     const courseColors = AppStore.schedule.getCurrentCourses().reduce((accumulator, { section }) => {
         accumulator[section.sectionCode] = section.color;
         return accumulator;
     }, {} as { [key: string]: string });
+    return courseColors;
+}
+
+function flattenSOCObject(
+    SOCObject: WebsocAPIResponse,
+    courseColors = yeet()
+): (WebsocSchool | WebsocDepartment | AACourse)[] {
     return SOCObject.schools.reduce((accumulator: (WebsocSchool | WebsocDepartment | AACourse)[], school) => {
         accumulator.push(school);
 
@@ -39,7 +46,7 @@ const flattenSOCObject = (SOCObject: WebsocAPIResponse): (WebsocSchool | WebsocD
 
         return accumulator;
     }, []);
-};
+}
 const RecruitmentBanner = () => {
     const [bannerVisibility, setBannerVisibility] = useState(true);
 
@@ -151,6 +158,7 @@ export default function CourseRenderPane() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [scheduleNames, setScheduleNames] = useState(AppStore.getScheduleNames());
+    const [raw, setRaw] = useState<WebsocAPIResponse>();
 
     const loadCourses = async () => {
         setLoading(true);
@@ -182,6 +190,7 @@ export default function CourseRenderPane() {
             }
             setLoading(false);
             setError(false);
+            setRaw(jsonResp);
             setCourseData(flattenSOCObject(jsonResp));
         } catch (error) {
             setLoading(false);
@@ -194,13 +203,26 @@ export default function CourseRenderPane() {
     }, [setScheduleNames]);
 
     useEffect(() => {
+        const changeColors = () => {
+            if (raw == null) {
+                return;
+            }
+            setCourseData(flattenSOCObject(raw));
+        };
+
+        AppStore.on('currentScheduleIndexChange', changeColors);
+
+        return () => {
+            AppStore.off('currentScheduleIndexChange', changeColors);
+        };
+    }, [raw]);
+
+    useEffect(() => {
         loadCourses();
         AppStore.on('scheduleNamesChange', updateScheduleNames);
-        AppStore.on('currentScheduleIndexChange', loadCourses);
 
         return () => {
             AppStore.off('scheduleNamesChange', updateScheduleNames);
-            AppStore.off('currentScheduleIndexChange', loadCourses);
         };
     }, [updateScheduleNames]);
 
